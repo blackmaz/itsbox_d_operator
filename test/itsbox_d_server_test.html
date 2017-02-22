@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html>
+	
+<head>
+<title>Test Page for ItsBox Designer Server-side</title>
+<script language="javascript" type="text/javascript">
+	
+	window.onload = function() {}
+	
+	var commSocket = null;
+	var operSocket = null;
+	var operSocket2 = null;
+	var timerId = null;
+	
+	function connectToServer() {
+	    var ip = document.getElementById("server_ip").value;
+	    if(ip == null || ip == "") {
+	        alert("Please input server ip or domain.");
+	        return;
+	    }
+
+	    if(commSocket!=null&&commSocket.readyState==1) {
+	    	commSocket.close()
+	    }
+	    connectToCommunicator("ws://" + ip + ":8080/websocket");
+
+	    if(operSocket!=null&&operSocket.readyState==1) {
+	    	operSocket.close()
+		}
+	    connectToOperator("ws://" + ip + ":8081/operator/mgmt");
+
+	    if((commSocket!=null&&commSocket.readyState==1) && (operSocket!=null&&operSocket.readyState==1)) {
+	        document.getElementById("con_btn").disabled = true;
+	    }
+	}
+	
+	function connectToCommunicator(url) {
+	    commSocket = new WebSocket(url);
+
+	    commSocket.onopen = function() {
+	        console.log("commSocket open success !!!");
+	        document.getElementById("con_result_comm").innerHTML = "Connected to the communicator successfully !!!";
+	        document.getElementById("discon_btn").disabled = false;
+	        document.getElementById("send_task_btn").disabled = false;
+	    }
+	
+	    commSocket.onmessage = function(e) {
+	        var contentobj = document.getElementById("receive_message");
+	        contentobj.value = e.data;
+    	    contentobj.disabled = false;
+	    }
+	
+	    commSocket.onclose = function(e) {
+	        console.log("commSocket close success : " + e.data);
+	        document.getElementById("con_result_comm").innerHTML = "Disconnected from the communicator !!!";
+	        document.getElementById("send_task_btn").disabled = true;
+		    if((commSocket==null||commSocket.readyState!=1) && (operSocket==null||operSocket.readyState!=1)) {
+	        	document.getElementById("con_btn").disabled = false;
+		        document.getElementById("discon_btn").disabled = true;
+		    }
+	    }
+	}
+
+	function connectToOperator(url) {
+	    operSocket = new WebSocket(url);
+
+	    operSocket.onopen = function() {
+	        console.log("operSocket open success !!!");
+	        document.getElementById("con_result_oper").innerHTML = "Connected to the operator successfully !!!";
+	        document.getElementById("discon_btn").disabled = false;
+	        document.getElementById("send_mgmt_btn").disabled = false;
+	        connectToOperatorForMonitor(url)
+	    }
+	
+	    operSocket.onmessage = function(e) {
+	        console.log("operSocket receive message : size=" + e.data.length);
+	        var contentobj = document.getElementById("receive_message");
+	        contentobj.value = e.data;
+    	    contentobj.disabled = false;
+	    }
+	
+	    operSocket.onclose = function(e) {
+	        console.log("operSocket close success : " + e.data);
+	        document.getElementById("con_result_oper").innerHTML = "Disconnected from the operator !!!";
+	        document.getElementById("send_mgmt_btn").disabled = true;
+		    if((commSocket==null||commSocket.readyState!=1) && (operSocket==null||operSocket.readyState!=1)) {
+	        	document.getElementById("con_btn").disabled = false;
+		        document.getElementById("discon_btn").disabled = true;
+		    }
+			operSocket2.close()
+	    }
+	}
+	
+	function disconnectFromServer() {
+		commSocket.close()
+		operSocket.close()
+	}
+	
+	function sendMessage(sock) {
+	    var sendmsg = document.getElementById("send_message").value;
+	    if(sendmsg == null || sendmsg == "") {
+            alert("Please input message to send.");
+            return;
+	    }	
+	    var contentobj = document.getElementById("receive_message");
+	    sock.send(sendmsg);
+	    contentobj.disabled = true;
+	}
+
+	function connectToOperatorForMonitor(url) {
+	    operSocket2 = new WebSocket(url);
+
+	    operSocket2.onopen = function() {
+	        console.log("operSocket2 open success !!!");
+	        document.getElementById("start_mgmt_btn").disabled = false;
+	        document.getElementById("worker_start_input").disabled = false;
+	        document.getElementById("start_worker_btn").disabled = false;
+	        document.getElementById("start_watcher_btn").disabled = false;
+	        document.getElementById("stop_mgmt_btn").disabled = false;
+	        document.getElementById("worker_stop_input").disabled = false;
+	        document.getElementById("stop_worker_btn").disabled = false;
+	        document.getElementById("stop_watcher_btn").disabled = false;
+	        document.getElementById("stop_all_btn").disabled = false;
+	        startMonitoring();
+	    }
+
+	    operSocket2.onmessage = function(e) {
+	        console.log("operSocket2 receive message : size=" + e.data.length);
+            var result = JSON.parse(e.data);
+			updateTime(result.time);
+			updateWorkerInfo(result.msg);
+	    }
+
+	    operSocket2.onclose = function(e) {
+	        console.log("operSocket2 close success : " + e.data);
+	        document.getElementById("start_mgmt_btn").disabled = true;
+	        document.getElementById("worker_start_input").disabled = true;
+	        document.getElementById("start_worker_btn").disabled = true;
+	        document.getElementById("start_watcher_btn").disabled = true;
+	        document.getElementById("stop_mgmt_btn").disabled = true;
+	        document.getElementById("worker_stop_input").disabled = true;
+	        document.getElementById("stop_worker_btn").disabled = true;
+	        document.getElementById("stop_watcher_btn").disabled = true;
+	        document.getElementById("stop_all_btn").disabled = true;
+	        stopMonitoring();
+    		document.getElementById("start_mon_btn").disabled = true;
+
+	    }
+	}
+
+	function getTwoDigit(num) {
+		if(num < 10) return '0'+num;
+		else return num;
+	}
+
+	function getWorkerInfo() {
+		sendmsg = '{"time":"' + (new Date().getTime()) + '", "location":"2", "direction":"1", "op_action":"info", "op_target":"worker", "op_detail":"all"}';
+	    var contentobj = document.getElementById("receive_info");
+	    operSocket2.send(sendmsg);
+	}
+	
+	function getTimeString(tm) {
+		var dt = new Date(tm*1000);
+		var hours = dt.getHours();
+		var minutes = dt.getMinutes();
+		var seconds = dt.getSeconds();
+		return getTwoDigit(hours)+':'+getTwoDigit(minutes)+':'+getTwoDigit(seconds);		
+	}
+	
+	function getDateTimeString(tm) {
+		var dt = new Date(tm*1000);
+		var year = dt.getYear();
+		var month = dt.getMonth();
+		var date = dt.getDate();
+		var hours = dt.getHours();
+		var minutes = dt.getMinutes();
+		var seconds = dt.getSeconds();
+		return (1900+year)+'/'+getTwoDigit(month+1)+'/'+getTwoDigit(date)+' '+getTwoDigit(hours)+':'+getTwoDigit(minutes)+':'+getTwoDigit(seconds);		
+	}
+	
+	function updateTime(tm) {
+        var contentdiv = document.getElementById("updatetime_div");
+        if(contentdiv.style.visibility == "hidden") {
+        	contentdiv.style.visibility = "visible";
+        }
+		var formattedTime = 'Updated on ' + getDateTimeString(tm);
+		document.getElementById("update_time").innerHTML = formattedTime;
+	}
+	
+	function updateWorkerInfo(worker_info) {
+		total_worker_info = worker_info.total
+		detail_worker_info = worker_info.workers
+
+		var worker_div = document.getElementById("worker_div");
+		if(detail_worker_info.length == 0) {
+			worker_div.style.visibility = 'hidden';
+			return;
+		} else {
+			worker_div.style.visibility = 'visible';
+			var worker_tbody = document.getElementById("tbody_worker");
+			worker_tbody.innerHTML = "";
+			for(i=0; i<detail_worker_info.length; i++) {
+			    var row = worker_tbody.insertRow(worker_tbody.rows.length);
+			    row.insertCell(0).innerHTML = detail_worker_info[i].pid;
+			    row.insertCell(1).innerHTML = detail_worker_info[i].thread.total;
+			    row.insertCell(2).innerHTML = detail_worker_info[i].thread.idle;
+			    row.insertCell(3).innerHTML = detail_worker_info[i].thread.active;
+			    row.insertCell(4).innerHTML = detail_worker_info[i].count.process;
+			    row.insertCell(5).innerHTML = detail_worker_info[i].count.success;
+			    row.insertCell(6).innerHTML = detail_worker_info[i].count.fail;
+			    row.insertCell(7).innerHTML = detail_worker_info[i].queued;
+			    row.insertCell(8).innerHTML = detail_worker_info[i].status.toUpperCase();
+			    row.cells[0].style.borderLeft = "0";
+			    row.cells[8].style.borderRight = "0"
+			}
+			var total_row = worker_tbody.insertRow(worker_tbody.rows.length);
+			total_row.style.backgroundColor = "#d2e9ff";
+		    total_row.insertCell(0).innerHTML = "TOTAL";
+		    total_row.insertCell(1).innerHTML = total_worker_info.thread.total;
+		    total_row.insertCell(2).innerHTML = total_worker_info.thread.idle;
+		    total_row.insertCell(3).innerHTML = total_worker_info.thread.active;
+		    total_row.insertCell(4).innerHTML = total_worker_info.count.process;
+		    total_row.insertCell(5).innerHTML = total_worker_info.count.success;
+		    total_row.insertCell(6).innerHTML = total_worker_info.count.fail;
+		    total_row.insertCell(7).innerHTML = total_worker_info.queued;
+		    total_row.insertCell(8).innerHTML = total_worker_info.status.toUpperCase();
+		    total_row.cells[0].style.borderLeft = "0";
+		    total_row.cells[8].style.borderRight = "0"
+		}
+
+		var thread_div = document.getElementById("thread_div");
+		if(total_worker_info.thread.active == 0) {
+			thread_div.style.visibility = 'hidden';
+			return;
+		} else {
+			thread_div.style.visibility = 'visible';
+			var thread_tbody = document.getElementById("tbody_thread");
+			thread_tbody.innerHTML = "";
+			for(i=0; i<detail_worker_info.length; i++) {
+				var tasks = detail_worker_info[i].active_tasks;
+				for(j=0; j<tasks.length; j++) {
+				    var row = thread_tbody.insertRow(thread_tbody.rows.length);
+				    row.insertCell(0).innerHTML = detail_worker_info[i].pid;
+				    row.insertCell(1).innerHTML = tasks[j].tid;
+				    row.insertCell(2).innerHTML = tasks[j].thread;
+				    row.insertCell(3).innerHTML = getTimeString(tasks[j].start);
+				    row.insertCell(4).innerHTML = tasks[j].duration.toFixed(3);
+	                var req_msg = JSON.parse(tasks[j].message);
+				    row.insertCell(5).innerHTML = JSON.stringify(req_msg.op_code);
+				    row.cells[0].style.borderLeft = "0";
+				    row.cells[5].style.borderRight = "0"
+				}
+			}
+		}
+	}
+
+	function startMgmt() {
+		sendmsg = '{"time":"' + (new Date().getTime()) + '", "location":"2", "direction":"1", "op_action":"start", "op_target":"management"}';
+	    operSocket.send(sendmsg);
+	}
+
+	function startWorker() {
+		var detailvalue = document.getElementById("worker_start_input").value;
+		sendmsg = '{"time":"' + (new Date().getTime()) + '", "location":"2", "direction":"1", "op_action":"start", "op_target":"worker", "op_detail":"' + detailvalue + '"}';
+	    operSocket.send(sendmsg);
+	}
+
+	function startWatcher() {
+		sendmsg = '{"time":"' + (new Date().getTime()) + '", "location":"2", "direction":"1", "op_action":"start", "op_target":"watcher"}';
+	    operSocket.send(sendmsg);
+	}
+
+	function stopMgmt() {
+		sendmsg = '{"time":"' + (new Date().getTime()) + '", "location":"2", "direction":"1", "op_action":"stop", "op_target":"management", "reply":"2"}';
+	    operSocket.send(sendmsg);
+	}
+
+	function stopWorker() {
+		var detailvalue = document.getElementById("worker_stop_input").value;
+		sendmsg = '{"time":"' + (new Date().getTime()) + '", "location":"2", "direction":"1", "op_action":"stop", "op_target":"worker", "op_detail":"' + detailvalue + '"}';
+	    operSocket.send(sendmsg);
+	}
+
+	function stopWatcher() {
+		sendmsg = '{"time":"' + (new Date().getTime()) + '", "location":"2", "direction":"1", "op_action":"stop", "op_target":"watcher"}';
+	    operSocket.send(sendmsg);
+	}
+
+	function stopAll() {
+		sendmsg = '{"time":"' + (new Date().getTime()) + '", "location":"2", "direction":"1", "op_action":"stop", "op_target":"all"}';
+	    operSocket.send(sendmsg);
+	}
+	
+	function startMonitoring() {
+		document.getElementById("start_mon_btn").disabled = true;
+		document.getElementById("stop_mon_btn").disabled = false;
+		var interval = document.getElementById("monitoring_interval").value;
+		timerId = setInterval("getWorkerInfo()", interval*1000);
+	}
+	
+	function stopMonitoring() {
+		document.getElementById("start_mon_btn").disabled = false;
+		document.getElementById("stop_mon_btn").disabled = true;
+        var monitor_div = document.getElementById("updatetime_div");
+        if(monitor_div.style.visibility == "visible") {
+        	monitor_div.style.visibility = "hidden";
+        }
+		var worker_div = document.getElementById("worker_div");
+		if(worker_div.style.visibility == "visible") {
+			worker_div.style.visibility = 'hidden';
+		}	        
+		var thread_div = document.getElementById("thread_div");
+		if(thread_div.style.visibility == "visible") {
+			thread_div.style.visibility = 'hidden';
+		}	        
+	    if(timerId != null) {
+	    	clearInterval(timerId);
+	    }
+	}
+	
+	function changeDisplay(id, text) {
+		var flag = document.getElementById(id).style.display;
+		if(flag != "none") {
+			document.getElementById(id).style.display = "none";
+			text.innerHTML = "Show";
+		} else {
+			document.getElementById(id).style.display = "block";
+			text.innerHTML = "Hide";
+		}
+	}
+
+</script>
+
+<style>
+table { border-collapse: collapse; }
+th,td { border: 1px solid #b0b0b0; border-collapse: collapse; text-align: center; text-valign: top; font-size: 12px; height: 20px; }
+th { border: 1px solid #b0b0b0; background-color: #e7e7e7; }
+</style>
+
+</head>
+
+<body>
+<div id="in_out" style="float: left;">
+	<strong>Location:</strong><br>
+	<input type="text" id="server_ip" size="25" value="127.0.0.1">
+	<button id="con_btn" onClick="connectToServer()">Connect</button>
+	<button id="discon_btn" onClick="disconnectFromServer()" disabled>Disconnect</button>
+	<pre id="con_result_comm">Not connected to the communicator.</pre><pre id="con_result_oper">Not connected to the operator.</pre>
+	
+	
+	<hr style="width: 830px; clear:both;">
+	
+	<div style="float: right;"><font size="2" onClick="changeDisplay('send_receive', this)">Hide</font></div>
+	<div id="send_receive" style="width: 800px; padding-top: 10px; margin-top: 5px; float: left;">
+		<div id="send" style="float: left;">
+			<strong>Send Message:</strong><br>
+			<textarea id="send_message" cols="50" rows="12">
+{
+  "time" : "123456789",
+  "client_channel_id" : "ABCD1234",
+  "company_code" : "1",
+  "location" : "2",
+  "direction" : "1",
+  "op_code" : {"module":"rule.RuleSample", "function":"getSizeList"},
+  "op_data" : {"access":"ACCESSKEYHERE", "secret":"SECRETKEYHERE", "region":"ap-northeast-1", "arguments":{}}
+}
+			</textarea><br>
+			<button id="send_task_btn" onClick="sendMessage(commSocket)" disabled>Task</button>
+			<button id="send_mgmt_btn" onClick="sendMessage(operSocket)" disabled>Management</button>
+		</div>
+
+		<div id="receive" style="width: 350px; padding-left: 20px; margin-left: 20px; border-left-color: rgb(204, 204, 204); border-left-width: 1px; border-left-style: solid; float: left;">
+			<strong>Receive Message:</strong>
+			<textarea id="receive_message" cols="50" rows="12" readonly>
+			</textarea><br>
+		</div>
+
+	
+		<div id="operator_mgmt" style="width: 800px; padding-top: 10px; padding-bottom: 10px; margin-top: 10px; margin-bottom: 10px; float: left;">
+			<strong>Management Operator:</strong><br>
+			<button id="start_mgmt_btn" style="width:110pt" onClick="startMgmt()" disabled>Start Management</button>
+	        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+	        <input type="text" id="worker_start_input" size="22" value="ProcCount(ThreadCount)" disabled>
+			<button id="start_worker_btn" style="width:80pt" onClick="startWorker()" disabled>Start Worker</button>
+	        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+			<button id="start_watcher_btn" style="width:80pt" onClick="startWatcher()" disabled>Start Watcher</button>
+			<br>
+			<button id="stop_mgmt_btn" style="width:110pt" onClick="stopMgmt()" disabled><font color="red">Stop Management</font></button>
+	        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+	        <input type="text" id="worker_stop_input" size="22" value="count=n, pid=n, all" disabled>
+			<button id="stop_worker_btn" style="width:80pt" onClick="stopWorker()" disabled>Stop Worker</button>
+	        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+			<button id="stop_watcher_btn" style="width:80pt" onClick="stopWatcher()" disabled>Stop Watcher</button>
+	        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+			<button id="stop_all_btn" style="width:80pt" onClick="stopAll()" disabled><font color="red">Stop All</font></button>
+		</div>
+		
+	</div>
+	<br><br>
+	
+	<hr style="width: 830px; clear:both;">
+
+	<div style="float: right;"><font size="2" onClick="changeDisplay('operator_monitor', this)">Hide</font></div>
+	<div id="operator_monitor" style="width: 800px; padding-top: 10px; margin-top: 5px; float: left;">
+		<strong>Monitoring Operator:</strong><br><br>
+		<font size="2">Interval <input type="text" id="monitoring_interval" size="3" value="2" style="text-align: right;"> sec</font>&nbsp;&nbsp;
+		<button id="start_mon_btn" onClick="startMonitoring()" disabled>Start Monitoring</button>
+		<button id="stop_mon_btn" onClick="stopMonitoring()" disabled>Stop Monitoring</button>
+		<div id="updatetime_div" style="width: 250px; float: right; visibility: hidden;"><i><font id="update_time" size="2">Updated on 1900/01/01 00:00:00</font></i></div>
+		<br><br>
+		<div id="worker_div" style="visibility: hidden;">
+			<table width="750">
+				<tr>
+					<th width="100" rowspan=2 style="border-left: 0;">PID</th>
+					<th colspan=3>Thread</th>
+					<th colspan=4><font color="#ff0000">Count</font></th>
+					<th rowspan=2 style="border-right: 0;">Status</th>
+				</tr>
+				<tr>
+					<th width="65">Total</th>
+					<th width="65"><font color="#0000ff">Idle</font></th>
+					<th width="65"><font color="#ff8000">Active</font></th>
+					<th width="95">Process</th>
+					<th width="95"><font color="#0000ff">Success</font></th>
+					<th width="65"><font color="#ff8000">Fail</font></th>
+					<th width="65"><font color="#ff8000">Queued</font></th>
+				</tr>
+				<tbody id="tbody_worker"></tbody>
+			</table>
+		</div>
+		<br>
+		<div id="thread_div" style="visibility: hidden;">
+			<table width="750">
+				<tr>
+					<th width="100" style="border-left: 0;">PID</th>
+					<th width="100">TID</th>
+					<th width="100">Name</th>
+					<th width="100">Started</th>
+					<th width="100">Duration</th>
+					<th style="border-right: 0;">Task</th>
+				</tr>
+				<tbody id="tbody_thread"></tbody>
+			</table>
+		</div>
+	</div>
+
+</div>
+</body>
+</html>
